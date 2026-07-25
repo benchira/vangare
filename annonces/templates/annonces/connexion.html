@@ -1,0 +1,12 @@
+{% extends 'annonces/base.html' %}
+{% block content %}
+<div class="card">
+    <h2>Connexion</h2>
+    <p class="muted">Saisissez votre téléphone ou votre email pour vous connecter.</p>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button class="btn" type="submit">Se connecter</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends 'annonces/base.html' %}
+{% block content %}
+<div class="card">
+    <h2>Déposer une annonce</h2>
+    <p class="muted">Ajoutez une photo, une description et précisez la catégorie de votre produit.</p>
+    <form method="post" enctype="multipart/form-data" class="form-row">
+        {% csrf_token %}
+        {% for field in form %}
+            <div>
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}
+                    <div class="muted">{{ field.errors|striptags }}</div>
+                {% endif %}
+            </div>
+        {% endfor %}
+        <button class="btn" type="submit">Publier</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,13 @@
+text
+#Environnent virtuel
+venv/
+*.env
+#Cache Python
+__pycache__/
+*.pyc
+#Base de données locale(ne pas mettre sur GitHub)
+db.sqlite3
+#Fichiers VS Code
+.vscode/
+#Medias (si tu ne veux pas stocker les images des utilisateurs sur GitHub)
+media/

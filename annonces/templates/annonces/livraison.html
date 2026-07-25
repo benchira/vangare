@@ -1,0 +1,24 @@
+{% extends 'annonces/base.html' %}
+{% block content %}
+<div class="card">
+    <h2>Livraison cash on delivery</h2>
+    <p class="muted">Préparez la livraison avec Aramex pour la réservation de {{ reservation.produit.titre }}.</p>
+    <form method="post" class="form-row">
+        {% csrf_token %}
+        <div>
+            <label for="transporteur">Transporteur</label>
+            <select id="transporteur" name="transporteur" required>
+                <option value="">Sélectionnez un transporteur</option>
+                {% for transporteur in transporteurs %}
+                    <option value="{{ transporteur.id }}">{{ transporteur.nom }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="adresse">Adresse de livraison</label>
+            <textarea id="adresse" name="adresse" rows="4" placeholder="Entrez l’adresse complète"></textarea>
+        </div>
+        <button class="btn" type="submit">Créer la livraison</button>
+    </form>
+</div>
+{% endblock %}

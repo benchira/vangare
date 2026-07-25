@@ -1,0 +1,42 @@
+#text--- Fichiers système et caches Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.cache/
+
+#--- Environnements virtuels ---
+venv/
+env/
+ENV/
+.venv/
+
+#--- Base de données locale ---
+db.sqlite3
+
+--- Fichiers de configuration sensibles ---
+.env
+
+#--- Fichiers médias et statiques locaux ---
+/media/
+/static/staticfiles/
+
+#--- Configuration de l'éditeur ---
+.vscode/
+.idea/
+*.suo
+.ntvs
+*.njsproj
+#Environnent virtuel
+venv/
+*.env
+#Cache Python
+__pycache__/
+*.pyc
+#Base de données locale(ne pas mettre sur GitHub)
+db.sqlite3
+#Fichiers VS Code
+.vscode/
+#Medias (si tu ne veux pas stocker les images des utilisateurs sur GitHub)
+media/

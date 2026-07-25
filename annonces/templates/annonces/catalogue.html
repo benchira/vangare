@@ -1,0 +1,68 @@
+{% extends 'annonces/base.html' %}
+{% block content %}
+<div class="hero">
+    <span class="badge">Marketplace sécurisé</span>
+    <h1 class="hero-title">Trouvez des biens d’occasion en toute confiance</h1>
+    <p class="hero-subtitle">Pièces automobiles, vêtements, chaussures, décoration : une marketplace locale simple, rapide et sécurisée.</p>
+    <div class="actions">
+        {% if user.is_authenticated %}
+            <a class="btn" href="{% url 'deposer' %}">Déposer une annonce</a>
+        {% else %}
+            <a class="btn" href="{% url 'inscription' %}">Créer un compte</a>
+            <a class="btn btn--secondary" href="{% url 'connexion' %}">Se connecter</a>
+        {% endif %}
+    </div>
+</div>
+<div class="card card--soft">
+    <form method="get" class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items:end;">
+        <div>
+            <label for="q">Recherche</label>
+            <input id="q" name="q" value="{{ query }}" placeholder="Rechercher un produit">
+        </div>
+        <div>
+            <label for="categorie">Catégorie</label>
+            <select id="categorie" name="categorie">
+                <option value="">Toutes</option>
+                {% for categorie in categories %}
+                    <option value="{{ categorie.id }}" {% if selected_categorie == categorie.id|stringformat:'s' %}selected{% endif %}>{{ categorie.nom }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="sous_categorie">Sous-catégorie</label>
+            <select id="sous_categorie" name="sous_categorie">
+                <option value="">Toutes</option>
+                {% for sous_categorie in sous_categories %}
+                    <option value="{{ sous_categorie.id }}" {% if selected_sous_categorie == sous_categorie.id|stringformat:'s' %}selected{% endif %}>{{ sous_categorie.nom }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <button class="btn" type="submit">Filtrer</button>
+        </div>
+    </form>
+</div>
+<div class="grid">
+    {% for produit in produits %}
+        <div class="card product-card">
+            {% if produit.image %}
+                <img src="{{ produit.image.url }}" alt="{{ produit.titre }}">
+            {% endif %}
+            <div>
+                <h3 class="product-card__title">{{ produit.titre }}</h3>
+                <p class="product-card__meta">{{ produit.category }} / {{ produit.subcategory }}</p>
+                <p>{{ produit.description }}</p>
+                <p class="product-card__price">{{ produit.prix }} TND</p>
+                {% if produit.tags_ia %}<p class="muted">Tags IA : {{ produit.tags_ia }}</p>{% endif %}
+            </div>
+            {% if user.is_authenticated %}
+                <a class="btn" href="{% url 'reserver_produit' produit.id %}">Acheter</a>
+            {% else %}
+                <a class="btn" href="{% url 'connexion' %}">Se connecter pour acheter</a>
+            {% endif %}
+        </div>
+    {% empty %}
+        <div class="card empty-state"><p>Aucune annonce disponible pour le moment.</p></div>
+    {% endfor %}
+</div>
+{% endblock %}

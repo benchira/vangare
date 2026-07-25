@@ -1,0 +1,15 @@
+{% extends 'annonces/base.html' %}
+
+{% block content %}
+  <h2>Vérification de l'email</h2>
+  <p>Un code de vérification a été envoyé à {{ email }}. Entrez-le ci-dessous :</p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="email" value="{{ email }}" />
+    <div>
+      <label for="code">Code</label>
+      <input id="code" name="code" maxlength="10" />
+    </div>
+    <button type="submit">Vérifier</button>
+  </form>
+{% endblock %}

@@ -1,0 +1,214 @@
+Act en tant qu'expert développeur Python/Django et architecte cloud. Je possède un projet de marketplace sécurisée de type "conciergerie / courtage" (C2C avec intermédiaire) ciblant le marché tunisien, et j'ai besoin que tu reprennes le flambeau sur la base des spécifications et du code déjà établis ci-dessous.
+
+L'objectif est d'avoir une plateforme fonctionnelle où l'anonymat des vendeurs est préservé, et où l'intelligence artificielle simplifie le dépôt d'annonces.
+
+───
+
+1. FLUX DE FONCTIONNEMENT ET LOGIQUE MÉTIER
+• Inscription Vendeur : Le vendeur crée un compte en fournissant ses coordonnées (Nom, Email, Téléphone, Ville). Ces données de contact sont strictement privées et stockées de manière masquée.
+• Dépôt d'Annonce & IA : Le vendeur téléverse la photo d'un objet avec un titre, une description et un prix en Dinars Tunisiens (TND). Lors de la validation, le système envoie automatiquement la photo à l'API Google Cloud Vision pour analyser l'image et générer des mots-clés (tags) descriptifs en coulisses.
+• Affichage Public : Le catalogue affiche les objets disponibles avec leur photo, prix, description et les tags générés par l'IA. Les coordonnées du vendeur restent 100% invisibles pour les visiteurs et acheteurs.
+• Action d'Achat (Intermédiation) : Lorsqu'un acheteur connecté clique sur "Acheter", le produit passe instantanément au statut "Réservé" et disparaît du catalogue public (pour éviter les doublons). Un ticket de "Réservation" est créé.
+• Rôle de l'Administrateur : Seul l'administrateur a accès au panneau de contrôle. Il y voit les tickets de réservation avec, côte à côte, le numéro de téléphone du vendeur et celui de l'acheteur afin de les contacter manuellement pour finaliser la vente et la livraison.
+
+───
+
+2. CONTRAINTES ENVIRONNEMENTALES (DEVELOPPEMENT LOCAL)
+Le projet est développé sur un iMac ancien sous macOS High Sierra (10.13). Pour garantir la stabilité, l'environnement utilise :
+• Python 3.9 / 3.10 (pour éviter les conflits d'OS).
+• Django comme framework principal.
+• La bibliothèque google-cloud-vision pour l'IA (nécessite une clé d'API JSON Google Cloud stockée en variable d'environnement GOOGLE_APPLICATION_CREDENTIALS).
+• Pillow pour la gestion des images.
+
+───
+
+3. ARCHITECTURE TECHNIQUE DU CODE ACTUEL
+
+Voici l'arborescence et l'intégralité du code source déjà écrit pour ce projet :
+
+STRUCTURE DES DOSSIERS
+marketplace_tunisie/
+├── core/settings.py, urls.py
+├── annonces/models.py, forms.py, views.py, admin.py
+└── annonces/templates/annonces/base.html, catalogue.html, inscription.html, connexion.html, deposer.html, confirmation.html
+
+CODE SOURCE DU BACK-END
+
+• core/settings.py (Extraits médias & apps) :
+INSTALLED_APPS += ['annonces']
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
+LOGIN_URL = 'connexion'
+LOGIN_REDIRECT_URL = 'accueil'
+
+• annonces/models.py :
+from django.db import models
+from django.contrib.auth.models import User
+from google.cloud import vision
+import io, os
+
+def analyser_image_ia(chemin_absolu):
+try:
+client = vision.ImageAnnotatorClient()
+with io.open(chemin_absolu, 'rb') as image_file:
+content = image_file.read()
+image = vision.Image(content=content)
+response = client.label_detection(image=image)
+tags = [label.description for label in response.label_annotations if label.score > 0.70]
+return ", ".join(tags) if tags else "Objet non identifié"
+except Exception as e:
+return f"Erreur analyse IA : {str(e)}"
+
+class Profil(models.Model):
+user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profil')
+telephone = models.CharField(max_length=20)
+ville = models.CharField(max_length=100)
+
+class Produit(models.Model):
+STATUTS = (('disponible', 'Disponible'), ('reserve', 'Réservé'))
+vendeur = models.ForeignKey(User, on_delete=models.CASCADE, related_name='produits')
+titre = models.CharField(max_length=200)
+description = models.TextField()
+prix = models.DecimalField(max_digits=10, decimal_places=3)
+image = models.ImageField(upload_to='photos_produits/')
+tags_ia = models.CharField(max_length=300, blank=True, null=True)
+statut = models.CharField(max_length=20, choices=STATUTS, default='disponible')
+date_creation = models.DateTimeField(auto_now_add=True)
+
+def save(self, *args, **kwargs):
+super().save(*args, **kwargs)
+if self.image and not self.tags_ia:
+chemin_image = self.image.path
+if os.path.exists(chemin_image):
+self.tags_ia = analyser_image_ia(chemin_image)
+super().save(update_fields=['tags_ia'])
+
+class Reservation(models.Model):
+produit = models.ForeignKey(Produit, on_delete=models.CASCADE)
+acheteur = models.ForeignKey(User, on_delete=models.CASCADE)
+date_reservation = models.DateTimeField(auto_now_add=True)
+traite = models.BooleanField(default=False)
+
+• annonces/forms.py :
+from django import forms
+from django.contrib.auth.models import User
+from .models import Profil, Produit
+
+class InscriptionForm(forms.ModelForm):
+username = forms.CharField(max_length=150)
+password = forms.CharField(widget=forms.PasswordInput)
+email = forms.EmailField()
+telephone = forms.CharField(max_length=20)
+ville = forms.CharField(max_length=100)
+
+class Meta:
+model = User
+fields = ['username', 'email', 'password']
+
+def save(self, commit=True):
+user = super().save(commit=False)
+user.set_password(self.cleaned_data["password"])
+if commit:
+user.save()
+Profil.objects.create(user=user, telephone=self.cleaned_data['telephone'], ville=self.cleaned_data['ville'])
+return user
+
+class AnnonceForm(forms.ModelForm):
+class Meta:
+model = Produit
+fields = ['titre', 'description', 'prix', 'image']
+
+• annonces/views.py :
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login
+from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.decorators import login_required
+from .models import Produit, Reservation
+from .forms import InscriptionForm, AnnonceForm
+
+def catalogue_public(request):
+produits = Produit.objects.filter(statut='disponible').order_by('-date_creation')
+return render(request, 'annonces/catalogue.html', {'produits': produits})
+
+def inscription_vendeur(request):
+if request.method == 'POST':
+form = InscriptionForm(request.POST)
+if form.is_valid():
+user = form.save()
+login(request, user)
+return redirect('accueil')
+else:
+form = InscriptionForm()
+return render(request, 'annonces/inscription.html', {'form': form})
+
+def connexion_utilisateur(request):
+if request.method == 'POST':
+form = AuthenticationForm(request, data=request.POST)
+if form.is_valid():
+user = form.get_user()
+login(request, user)
+return redirect('accueil')
+else:
+form = AuthenticationForm()
+return render(request, 'annonces/connexion.html', {'form': form})
+
+@login_required
+def deposer_annonce(request):
+if request.method == 'POST':
+form = AnnonceForm(request.POST, request.FILES)
+if form.is_valid():
+annonce = form.save(commit=False)
+annonce.vendeur = request.user
+annonce.save()
+return redirect('accueil')
+else:
+form = AnnonceForm()
+return render(request, 'annonces/deposer.html', {'form': form})
+
+@login_required
+def reserver_produit(request, produit_id):
+produit = get_object_or_404(Produit, id=produit_id, statut='disponible')
+produit.statut = 'reserve'
+produit.save()
+Reservation.objects.create(produit=produit, acheteur=request.user)
+return render(request, 'annonces/confirmation.html', {'produit': produit})
+
+• annonces/admin.py :
+from django.contrib import admin
+from .models import Profil, Produit, Reservation
+
+@admin.register(Profil)
+class ProfilAdmin(admin.ModelAdmin):
+list_display = ('user', 'telephone', 'ville')
+
+@admin.register(Produit)
+class ProduitAdmin(admin.ModelAdmin):
+list_display = ('titre', 'vendeur', 'prix', 'statut')
+
+@admin.register(Reservation)
+class ReservationAdmin(admin.ModelAdmin):
+list_display = ('produit', 'get_vendeur', 'get_telephone_vendeur', 'acheteur', 'get_telephone_acheteur', 'date_reservation', 'traite')
+def get_vendeur(self, obj): return obj.produit.vendeur.username
+def get_telephone_vendeur(self, obj): return obj.produit.vendeur.profil.telephone
+def get_telephone_acheteur(self, obj): return obj.acheteur.profil.telephone
+
+• core/urls.py :
+from django.contrib import admin
+from django.urls import path
+from django.conf import settings
+from django.conf.urls.static import static
+from annonces import views
+
+urlpatterns = [
+path('admin/', admin.site.urls),
+path('', views.catalogue_public, name='accueil'),
+path('inscription/', views.inscription_vendeur, name='inscription'),
+path('connexion/', views.connexion_utilisateur, name='connexion'),
+path('deposer/', views.deposer_annonce, name='deposer'),
+path('acheter/<int:produit_id>/', views.reserver_produit, name='reserver_produit'),
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+───
+
+TACHE À ACCOMPLIR :
+Prends connaissance de cette architecture. Je ne souhaite pas recevoir d'explications théoriques sur le code, mais des solutions directement applicables. Confirme-moi que tu as bien compris le projet, l'importance du masquage des coordonnées et le fonctionnement de la réservation. Attends mes instructions pour la suite (optimisations, intégration SMS, déploiement en ligne ou préparation d'une API pour future application mobile).

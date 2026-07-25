@@ -1,0 +1,60 @@
+{% extends 'annonces/base.html' %}
+{% block content %}
+<div class="hero">
+  <div class="hero-title">Snapshot - Vue complète du site</div>
+  <p class="hero-subtitle">Une page statique générée par le serveur listant les éléments publics du site.</p>
+</div>
+
+<div class="card">
+  <h2>Catégories</h2>
+  <div class="grid">
+    {% for cat in categories %}
+      <div class="card card--soft">
+        <h3>{{ cat.nom }}</h3>
+        <p class="muted">Sous-catégories: {% for sc in cat.sous_categories.all %}{{ sc.nom }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+      </div>
+    {% empty %}
+      <p>Aucune catégorie</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Produits publics</h2>
+  <div class="grid">
+    {% for p in produits %}
+      <div class="product-card card--soft">
+        <img src="{{ p.image.url if p.image else '' }}" alt="{{ p.titre }}"/>
+        <div>
+          <div class="product-card__title">{{ p.titre }}</div>
+          <div class="product-card__meta">{{ p.description|truncatechars:120 }}</div>
+          <div class="product-card__price">{{ p.prix }} TND</div>
+        </div>
+      </div>
+    {% empty %}
+      <p>Aucun produit disponible</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Transporteurs actifs</h2>
+  <ul>
+    {% for t in transporteurs %}
+      <li>{{ t.nom }} {% if t.description %}- {{ t.description }}{% endif %}</li>
+    {% empty %}
+      <li>Aucun transporteur</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Conditions d'utilisation (extrait)</h2>
+  {% if conditions %}
+    <div class="card--soft">{{ conditions.contenu|safe }}</div>
+  {% else %}
+    <p>Aucune condition disponible</p>
+  {% endif %}
+</div>
+
+{% endblock %}
