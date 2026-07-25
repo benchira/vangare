@@ -1,8 +1,11 @@
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 
 from .forms import AnnonceForm, InscriptionForm
 from .models import Categorie, Livraison, Produit, Reservation, SousCategorie, Transporteur, Conditions, PhoneVerification, EmailVerification
@@ -10,6 +13,9 @@ from .sms import generate_code, send_sms
 from .email import send_verification_email
 from .payment import create_konnect_payment
 from .delivery import create_aramex_shipment
+
+OTP_MAX_ATTEMPTS = 5
+OTP_VALIDITY_MINUTES = 10
 
 
 def catalogue_public(request):
@@ -45,11 +51,13 @@ def inscription_vendeur(request):
             identifiant = form.cleaned_data.get('identifiant')
             if identifiant == 'telephone':
                 telephone = form.cleaned_data.get('telephone')
-                # create verification code and send SMS
                 code = generate_code(6)
-                pv = PhoneVerification.objects.create(telephone=telephone, code=code)
+                pv = PhoneVerification.objects.create(
+                    telephone=telephone,
+                    code=code,
+                    expires_at=timezone.now() + timedelta(minutes=OTP_VALIDITY_MINUTES),
+                )
                 send_sms(telephone, f"Votre code de vérification: {code}")
-                # store cleaned data in session until verification
                 request.session['pending_signup'] = {
                     'telephone': telephone,
                     'password': form.cleaned_data.get('password'),
@@ -59,7 +67,11 @@ def inscription_vendeur(request):
             elif identifiant == 'email':
                 email = form.cleaned_data.get('email')
                 code = generate_code(6)
-                ev = EmailVerification.objects.create(email=email, code=code)
+                ev = EmailVerification.objects.create(
+                    email=email,
+                    code=code,
+                    expires_at=timezone.now() + timedelta(minutes=OTP_VALIDITY_MINUTES),
+                )
                 send_verification_email(email, code)
                 request.session['pending_signup'] = {
                     'email': email,
@@ -91,15 +103,31 @@ def verify_phone_code(request):
         except PhoneVerification.DoesNotExist:
             pv = None
 
-        if not pv or pv.code != code:
+        if not pv:
             messages.error(request, 'Code invalide.')
             return render(request, 'annonces/verify_phone.html', {'telephone': telephone})
 
-        # mark verified and create user
+        if pv.expires_at and timezone.now() > pv.expires_at:
+            messages.error(request, 'Ce code a expiré. Veuillez recommencer l\'inscription pour en recevoir un nouveau.')
+            return redirect('inscription')
+
+        if pv.attempts >= OTP_MAX_ATTEMPTS:
+            messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+            return redirect('inscription')
+
+        if pv.code != code:
+            pv.attempts += 1
+            pv.save(update_fields=['attempts'])
+            restant = OTP_MAX_ATTEMPTS - pv.attempts
+            if restant <= 0:
+                messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+                return redirect('inscription')
+            messages.error(request, f'Code invalide. Il vous reste {restant} tentative(s).')
+            return render(request, 'annonces/verify_phone.html', {'telephone': telephone})
+
         pv.verified = True
         pv.save(update_fields=['verified'])
 
-        # create user from pending session
         from django.contrib.auth.models import User
         data = pending
         username = telephone
@@ -113,7 +141,6 @@ def verify_phone_code(request):
         from .models import Profil
         Profil.objects.create(user=user, telephone=telephone, ville=ville)
         login(request, user)
-        # cleanup
         try:
             del request.session['pending_signup']
         except KeyError:
@@ -137,8 +164,26 @@ def verify_email_code(request):
         except EmailVerification.DoesNotExist:
             ev = None
 
-        if not ev or ev.code != code:
+        if not ev:
             messages.error(request, 'Code invalide.')
+            return render(request, 'annonces/verify_email.html', {'email': email})
+
+        if ev.expires_at and timezone.now() > ev.expires_at:
+            messages.error(request, 'Ce code a expiré. Veuillez recommencer l\'inscription pour en recevoir un nouveau.')
+            return redirect('inscription')
+
+        if ev.attempts >= OTP_MAX_ATTEMPTS:
+            messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+            return redirect('inscription')
+
+        if ev.code != code:
+            ev.attempts += 1
+            ev.save(update_fields=['attempts'])
+            restant = OTP_MAX_ATTEMPTS - ev.attempts
+            if restant <= 0:
+                messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+                return redirect('inscription')
+            messages.error(request, f'Code invalide. Il vous reste {restant} tentative(s).')
             return render(request, 'annonces/verify_email.html', {'email': email})
 
         ev.verified = True
@@ -223,7 +268,6 @@ def initier_paiement(request, produit_id):
     produit = get_object_or_404(Produit, id=produit_id)
     if request.method == 'POST':
         provider = request.POST.get('provider', 'cash')
-        # Cash on delivery (prioritaire)
         if provider == 'cash':
             if request.user != produit.vendeur:
                 produit.statut = 'reserve'
@@ -233,7 +277,6 @@ def initier_paiement(request, produit_id):
                 return render(request, 'annonces/confirmation.html', {'produit': produit, 'reservation': reservation})
             else:
                 messages.info(request, 'Vous ne pouvez pas réserver votre propre annonce.')
-        # Konnect as the only online provider for now
         elif provider == 'konnect':
             return_url = request.build_absolute_uri('/').rstrip('/')
             try:
