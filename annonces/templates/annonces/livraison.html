@@ -3,17 +3,9 @@
 <div class="card">
     <h2>Livraison cash on delivery</h2>
     <p class="muted">Préparez la livraison avec Aramex pour la réservation de {{ reservation.produit.titre }}.</p>
+    <p class="muted">Transporteur choisi au paiement : <strong>{{ reservation.transporteur.nom|default:"non renseigné" }}</strong></p>
     <form method="post" class="form-row">
         {% csrf_token %}
-        <div>
-            <label for="transporteur">Transporteur</label>
-            <select id="transporteur" name="transporteur" required>
-                <option value="">Sélectionnez un transporteur</option>
-                {% for transporteur in transporteurs %}
-                    <option value="{{ transporteur.id }}">{{ transporteur.nom }}</option>
-                {% endfor %}
-            </select>
-        </div>
         <div>
             <label for="adresse">Adresse de livraison</label>
             <textarea id="adresse" name="adresse" rows="4" placeholder="Entrez l’adresse complète"></textarea>

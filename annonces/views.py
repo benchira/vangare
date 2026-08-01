@@ -7,13 +7,26 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from .forms import AnnonceForm, InscriptionForm
-from .models import Categorie, Livraison, Produit, Reservation, SousCategorie, Transporteur, Conditions, PhoneVerification, EmailVerification
-from .sms import generate_code, send_sms
 from .email import send_verification_email
+from .forms import AnnonceForm, InscriptionForm
+from .models import (
+    Categorie,
+    Conditions,
+    EmailVerification,
+    Livraison,
+    PhoneVerification,
+    Produit,
+    Reservation,
+    SousCategorie,
+    Transporteur,
+)
 from .payment import create_konnect_payment
 from .delivery import create_aramex_shipment
+from .sms import generate_code, send_sms
 
+# Sécurité OTP : au-delà de ce nombre d'essais sur un même code, il faut en
+# redemander un nouveau. Sans cette limite, un code à 6 chiffres est
+# bruteforçable (1 000 000 de combinaisons, aucune limite avant ce correctif).
 OTP_MAX_ATTEMPTS = 5
 OTP_VALIDITY_MINUTES = 10
 
@@ -108,11 +121,11 @@ def verify_phone_code(request):
             return render(request, 'annonces/verify_phone.html', {'telephone': telephone})
 
         if pv.expires_at and timezone.now() > pv.expires_at:
-            messages.error(request, 'Ce code a expiré. Veuillez recommencer l\'inscription pour en recevoir un nouveau.')
+            messages.error(request, "Ce code a expiré. Veuillez recommencer l'inscription pour en recevoir un nouveau.")
             return redirect('inscription')
 
         if pv.attempts >= OTP_MAX_ATTEMPTS:
-            messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+            messages.error(request, "Trop de tentatives incorrectes. Veuillez recommencer l'inscription pour recevoir un nouveau code.")
             return redirect('inscription')
 
         if pv.code != code:
@@ -120,7 +133,7 @@ def verify_phone_code(request):
             pv.save(update_fields=['attempts'])
             restant = OTP_MAX_ATTEMPTS - pv.attempts
             if restant <= 0:
-                messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+                messages.error(request, "Trop de tentatives incorrectes. Veuillez recommencer l'inscription pour recevoir un nouveau code.")
                 return redirect('inscription')
             messages.error(request, f'Code invalide. Il vous reste {restant} tentative(s).')
             return render(request, 'annonces/verify_phone.html', {'telephone': telephone})
@@ -169,11 +182,11 @@ def verify_email_code(request):
             return render(request, 'annonces/verify_email.html', {'email': email})
 
         if ev.expires_at and timezone.now() > ev.expires_at:
-            messages.error(request, 'Ce code a expiré. Veuillez recommencer l\'inscription pour en recevoir un nouveau.')
+            messages.error(request, "Ce code a expiré. Veuillez recommencer l'inscription pour en recevoir un nouveau.")
             return redirect('inscription')
 
         if ev.attempts >= OTP_MAX_ATTEMPTS:
-            messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+            messages.error(request, "Trop de tentatives incorrectes. Veuillez recommencer l'inscription pour recevoir un nouveau code.")
             return redirect('inscription')
 
         if ev.code != code:
@@ -181,7 +194,7 @@ def verify_email_code(request):
             ev.save(update_fields=['attempts'])
             restant = OTP_MAX_ATTEMPTS - ev.attempts
             if restant <= 0:
-                messages.error(request, 'Trop de tentatives incorrectes. Veuillez recommencer l\'inscription pour recevoir un nouveau code.')
+                messages.error(request, "Trop de tentatives incorrectes. Veuillez recommencer l'inscription pour recevoir un nouveau code.")
                 return redirect('inscription')
             messages.error(request, f'Code invalide. Il vous reste {restant} tentative(s).')
             return render(request, 'annonces/verify_email.html', {'email': email})
@@ -200,7 +213,7 @@ def verify_email_code(request):
 
         user = User.objects.create_user(username=username, email=email, password=password)
         from .models import Profil
-        Profil.objects.create(user=user, telephone=data.get('telephone',''), ville=ville)
+        Profil.objects.create(user=user, telephone=data.get('telephone', ''), ville=ville)
         login(request, user)
         try:
             del request.session['pending_signup']
@@ -266,67 +279,111 @@ def reserver_produit(request, produit_id):
 @login_required
 def initier_paiement(request, produit_id):
     produit = get_object_or_404(Produit, id=produit_id)
+    transporteurs = Transporteur.objects.filter(actif=True).order_by('nom')
+
     if request.method == 'POST':
         provider = request.POST.get('provider', 'cash')
-        if provider == 'cash':
-            if request.user != produit.vendeur:
-                produit.statut = 'reserve'
-                produit.save(update_fields=['statut'])
-                reservation = Reservation.objects.create(produit=produit, acheteur=request.user)
+        transporteur_id = request.POST.get('transporteur')
+
+        if not transporteur_id:
+            messages.error(request, 'Veuillez sélectionner un transporteur pour calculer vos frais de port.')
+            return render(request, 'annonces/paiement.html', {
+                'produit': produit,
+                'provider': provider,
+                'response': None,
+                'transporteurs': transporteurs,
+            })
+
+        transporteur = get_object_or_404(Transporteur, id=transporteur_id, actif=True)
+
+        if request.user != produit.vendeur:
+            produit.statut = 'reserve'
+            produit.save(update_fields=['statut'])
+
+            reservation = Reservation.objects.create(
+                produit=produit,
+                acheteur=request.user,
+                transporteur=transporteur,
+            )
+
+            if provider == 'cash':
                 messages.success(request, 'Réservation confirmée. L’annonce a été retirée du catalogue.')
                 return render(request, 'annonces/confirmation.html', {'produit': produit, 'reservation': reservation})
-            else:
-                messages.info(request, 'Vous ne pouvez pas réserver votre propre annonce.')
-        elif provider == 'konnect':
-            return_url = request.build_absolute_uri('/').rstrip('/')
-            try:
-                response = create_konnect_payment(produit.prix, f'order-{produit.id}', f'Paiement pour {produit.titre}', return_url)
-                return render(request, 'annonces/paiement.html', {'produit': produit, 'provider': provider, 'response': response})
-            except Exception as exc:
-                messages.error(request, f'Le paiement n’a pas pu être initié : {exc}')
-    return render(request, 'annonces/paiement.html', {'produit': produit, 'provider': 'cash', 'response': None})
+
+            elif provider == 'konnect':
+                return_url = request.build_absolute_uri('/').rstrip('/')
+                try:
+                    response = create_konnect_payment(
+                        reservation.prix_total,
+                        f'order-{reservation.id}',
+                        f'Paiement pour {produit.titre}',
+                        return_url,
+                    )
+                    return render(request, 'annonces/paiement.html', {
+                        'produit': produit,
+                        'provider': provider,
+                        'response': response,
+                        'transporteurs': transporteurs,
+                    })
+                except Exception as exc:
+                    messages.error(request, f'Le paiement n’a pas pu être initié : {exc}')
+        else:
+            messages.info(request, 'Vous ne pouvez pas réserver votre propre annonce.')
+
+    return render(request, 'annonces/paiement.html', {
+        'produit': produit,
+        'provider': 'cash',
+        'response': None,
+        'transporteurs': transporteurs,
+    })
+
+
+@login_required
+def mes_commandes(request):
+    reservations = Reservation.objects.filter(acheteur=request.user).select_related('produit').order_by('-date_reservation')
+    return render(request, 'annonces/mes_commandes.html', {'reservations': reservations})
 
 
 @login_required
 def creer_livraison(request, reservation_id):
     reservation = get_object_or_404(Reservation, id=reservation_id, acheteur=request.user)
-    transporteurs = Transporteur.objects.filter(actif=True).order_by('nom')
+
+    if not reservation.traite:
+        messages.info(request, 'Votre commande est encore en attente de validation par notre équipe. Vous recevrez un message WhatsApp dès que ce sera fait.')
+        return redirect('mes_commandes')
+
     if request.method == 'POST':
         adresse = request.POST.get('adresse', '').strip()
-        transporteur_id = request.POST.get('transporteur')
-        transporteur = None
-        if transporteur_id:
-            transporteur = get_object_or_404(Transporteur, id=transporteur_id, actif=True)
+
         if not adresse:
             messages.error(request, 'Veuillez fournir une adresse de livraison.')
-        elif not transporteur:
-            messages.error(request, 'Veuillez sélectionner un transporteur actif.')
         else:
             livraison, created = Livraison.objects.get_or_create(
                 reservation=reservation,
                 defaults={
                     'mode_paiement': 'cash_on_delivery',
-                    'transporteur': transporteur,
                     'adresse': adresse,
+                    'transporteur': reservation.transporteur,
                 }
             )
             if not created:
                 livraison.adresse = adresse
-                livraison.transporteur = transporteur
+                livraison.transporteur = reservation.transporteur
                 livraison.save(update_fields=['adresse', 'transporteur'])
             try:
                 response = create_aramex_shipment(f'order-{reservation.id}', adresse, reservation.acheteur.profil.telephone)
                 livraison.numero_suivi = response.get('tracking_number', '')
                 livraison.statut = 'en_cours'
                 livraison.save(update_fields=['numero_suivi', 'statut'])
-                messages.success(request, f'La livraison a été préparée avec {transporteur.nom}.')
+                nom_transporteur = reservation.transporteur.nom if reservation.transporteur else 'notre transporteur'
+                messages.success(request, f'La livraison a été préparée avec {nom_transporteur}.')
             except Exception as exc:
                 messages.error(request, f'La livraison n’a pas pu être créée : {exc}')
-    return render(request, 'annonces/livraison.html', {'reservation': reservation, 'transporteurs': transporteurs})
+
+    return render(request, 'annonces/livraison.html', {'reservation': reservation})
 
 
 def conditions(request):
-    from .models import Conditions
     conditions = Conditions.objects.filter(actif=True).order_by('-date_modification').first()
     return render(request, 'annonces/conditions.html', {'conditions': conditions})
 

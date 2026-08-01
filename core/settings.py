@@ -102,3 +102,24 @@ PAYMEE_BASE_URL = os.getenv('PAYMEE_BASE_URL', 'https://paymee.tn/api')
 KONNECT_API_KEY = os.getenv('KONNECT_API_KEY', '')
 KONNECT_BASE_URL = os.getenv('KONNECT_BASE_URL', 'https://api.konnect.tn')
 KONNECT_RECEIVER_ID = os.getenv('KONNECT_RECEIVER_ID', '')
+
+# En dev (pas de clé Twilio/SMTP configurée), sms.py et email.py journalisent
+# le code de vérification au lieu de l'envoyer réellement. Sans ce bloc,
+# ce journal est invisible dans le terminal `runserver` (Django ne montre
+# pas les logs INFO des loggers applicatifs par défaut).
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'annonces': {
+            'handlers': ['console'],
+            'level': 'INFO' if DEBUG else 'WARNING',
+            'propagate': False,
+        },
+    },
+}

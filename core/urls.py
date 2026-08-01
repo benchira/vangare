@@ -31,6 +31,7 @@ urlpatterns = [
     path('acheter/<int:produit_id>/', views.reserver_produit, name='reserver_produit'),
     path('paiement/<int:produit_id>/', views.initier_paiement, name='initier_paiement'),
     path('livraison/<int:reservation_id>/', views.creer_livraison, name='creer_livraison'),
+    path('mes-commandes/', views.mes_commandes, name='mes_commandes'),
     path('conditions/', views.conditions, name='conditions'),
     path('snapshot/', views.site_snapshot, name='snapshot'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

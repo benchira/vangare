@@ -1,0 +1,22 @@
+{% extends 'annonces/base.html' %}
+{% block content %}
+<div class="card">
+    <h2>Mes commandes</h2>
+    {% if not reservations %}
+        <p class="muted">Vous n'avez pas encore de réservation.</p>
+    {% endif %}
+    {% for reservation in reservations %}
+        <div class="card card--soft">
+            <h3>{{ reservation.produit.titre }}</h3>
+            <p class="muted">Réservée le {{ reservation.date_reservation|date:"d/m/Y à H:i" }} — Total : {{ reservation.prix_total }} TND</p>
+            {% if reservation.traite %}
+                <p>✅ Commande validée par notre équipe.</p>
+                <a class="btn" href="{% url 'creer_livraison' reservation.id %}">Préparer la livraison</a>
+            {% else %}
+                <p>⏳ En attente de validation. Notre équipe vous contactera bientôt par WhatsApp.</p>
+            {% endif %}
+        </div>
+    {% endfor %}
+    <a class="btn btn--secondary" href="{% url 'accueil' %}">Retour au catalogue</a>
+</div>
+{% endblock %}

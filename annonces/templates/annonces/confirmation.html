@@ -3,16 +3,17 @@
 <div class="card">
     <h2>Réservation confirmée</h2>
     <p>L’annonce « {{ produit.titre }} » a été réservée avec succès.</p>
-    <p>Le paiement se fait uniquement en cash on delivery. Vous pouvez maintenant préparer la livraison.</p>
+    <p>Le paiement se fait uniquement en cash on delivery.</p>
     {% if reservation %}
     <div class="card card--soft alert alert--info">
         <h3>Prochaine étape</h3>
         <p>Notre équipe va valider votre commande et mettre en relation vous et le vendeur par WhatsApp pour finaliser la vente. Vous n'avez pas besoin de contacter le vendeur directement.</p>
     </div>
+
     {% endif %}
     <a class="btn" href="{% url 'accueil' %}">Retour au catalogue</a>
     {% if reservation %}
-    <a class="btn" href="{% url 'creer_livraison' reservation.id %}">Préparer la livraison</a>
+    <a class="btn" href="{% url 'mes_commandes' %}">Suivre ma commande</a>
     {% endif %}
 </div>
 {% endblock %}

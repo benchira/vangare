@@ -6,12 +6,22 @@ from .models import Categorie, Produit, Profil, SousCategorie
 
 class InscriptionForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput, label="Mot de passe")
-    email = forms.EmailField(label="Email", required=False)
-    telephone = forms.CharField(max_length=20, label="Téléphone", required=False)
+    email = forms.EmailField(
+        label="Email",
+        required=False,
+        help_text="Uniquement nécessaire si vous choisissez « Email » comme méthode d'identification ci-dessous."
+    )
+    telephone = forms.CharField(
+        max_length=20,
+        label="Téléphone",
+        required=False,
+        help_text="Uniquement nécessaire si vous choisissez « Téléphone » comme méthode d'identification ci-dessous."
+    )
     identifiant = forms.ChoiceField(
         choices=[('telephone', 'Téléphone'), ('email', 'Email')],
         widget=forms.RadioSelect,
-        label='Méthode d’identification'
+        label='Méthode d’identification',
+        help_text="Ce choix devient votre identifiant de connexion (il n'y a pas de champ « nom d'utilisateur » séparé). Vous n'avez besoin de remplir que le champ correspondant ci-dessus."
     )
     ville = forms.CharField(max_length=100, label="Ville")
 
@@ -72,11 +82,13 @@ class AnnonceForm(forms.ModelForm):
 
     class Meta:
         model = Produit
-        fields = ['titre', 'description', 'prix', 'image', 'category', 'subcategory']
+        fields = ['titre', 'description', 'prix', 'etat', 'poids_kg', 'image', 'category', 'subcategory']
         labels = {
             'titre': 'Titre',
             'description': 'Description',
             'prix': 'Prix (TND)',
+            'etat': 'État du produit',
+            'poids_kg': 'Poids (kg)',
             'image': 'Photo',
         }
 

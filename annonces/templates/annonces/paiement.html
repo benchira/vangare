@@ -6,6 +6,15 @@
     <form method="post" class="form-row">
         {% csrf_token %}
         <div>
+            <label for="transporteur">Transporteur</label>
+            <select id="transporteur" name="transporteur" required>
+                <option value="">Sélectionnez un transporteur</option>
+                {% for transporteur in transporteurs %}
+                    <option value="{{ transporteur.id }}">{{ transporteur.nom }} — {{ transporteur.prix_base }} TND + {{ transporteur.prix_par_kg }} TND/kg{% if transporteur.delai_estime %} ({{ transporteur.delai_estime }}){% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
             <label for="provider">Fournisseur</label>
             <select id="provider" name="provider">
                 <option value="cash" selected>Cash on delivery</option>

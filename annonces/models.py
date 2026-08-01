@@ -67,11 +67,30 @@ class SousCategorie(models.Model):
 
 class Produit(models.Model):
     STATUTS = (('disponible', 'Disponible'), ('reserve', 'Réservé'))
+    CONDITION_CHOICES = [
+        ('NEUF', 'Neuf / jamais utilisé'),
+        ('TBE', 'Très bon état'),
+        ('BE', 'Bon état'),
+        ('USG', 'Usagé / pour pièces'),
+    ]
 
     vendeur = models.ForeignKey(User, on_delete=models.CASCADE, related_name='produits')
-    titre = models.CharField(max_length=200)
-    description = models.TextField()
-    prix = models.DecimalField(max_digits=10, decimal_places=3)
+    titre = models.CharField(max_length=200, verbose_name="Titre de l'annonce")
+    description = models.TextField(verbose_name="Description détaillée")
+    prix = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Prix")
+    etat = models.CharField(
+        max_length=4,
+        choices=CONDITION_CHOICES,
+        default='NEUF',
+        verbose_name="État du produit",
+    )
+    poids_kg = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        verbose_name="Poids (kg)",
+        help_text="Utile pour le calcul dynamique des frais de livraison.",
+    )
     image = models.ImageField(upload_to='photos_produits/')
     tags_ia = models.CharField(max_length=300, blank=True, null=True)
     statut = models.CharField(max_length=20, choices=STATUTS, default='disponible')
@@ -94,8 +113,9 @@ class Produit(models.Model):
 class Reservation(models.Model):
     produit = models.ForeignKey(Produit, on_delete=models.CASCADE, related_name='reservations')
     acheteur = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reservations')
+    transporteur = models.ForeignKey('Transporteur', on_delete=models.SET_NULL, null=True, blank=True, related_name='reservations')
     date_reservation = models.DateTimeField(auto_now_add=True)
-    traite = models.BooleanField(default=False)
+    traite = models.BooleanField(default=False, verbose_name="Validée par l'équipe (contact WhatsApp effectué)")
     prix_initial = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     frais_port = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     commission = models.DecimalField(max_digits=10, decimal_places=3, default=0)
@@ -107,10 +127,14 @@ class Reservation(models.Model):
         if not self.prix_initial and self.produit_id:
             self.prix_initial = self.produit.prix
         if not self.frais_port:
-            # TODO(livraison): valeur provisoire tant que le vrai simulateur
-            # de prix par transporteur (cf. spec métier) n'est pas branché
-            # ici. Ne pas se fier à ce chiffre pour la mise en prod.
-            self.frais_port = self.produit.prix * Decimal('0.0625')
+            if self.transporteur_id:
+                # Calcul réel à partir de la grille tarifaire du transporteur choisi.
+                poids = self.produit.poids_kg or Decimal('0')
+                self.frais_port = self.transporteur.prix_base + (self.transporteur.prix_par_kg * poids)
+            else:
+                # Pas de transporteur sélectionné (achat direct sans passer par
+                # la simulation) : estimation provisoire par défaut.
+                self.frais_port = self.produit.prix * Decimal('0.0625')
         if not self.commission:
             self.commission = self.produit.prix * COMMISSION_RATE
         self.prix_total = self.prix_initial + self.frais_port + self.commission
@@ -124,13 +148,33 @@ class Transporteur(models.Model):
     nom = models.CharField(max_length=100, unique=True)
     actif = models.BooleanField(default=True)
     description = models.TextField(blank=True)
+    prix_base = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        default=0,
+        verbose_name="Frais de prise en charge (fixe)",
+        help_text="Prix de base incompressible pour ce transporteur.",
+    )
+    prix_par_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        default=0,
+        verbose_name="Coût par kilo additionnel",
+        help_text="Sera multiplié par le poids du produit.",
+    )
+    delai_estime = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Délai estimé",
+        help_text="Ex : 48h à 72h ouvrées",
+    )
 
     class Meta:
         verbose_name = 'Transporteur'
         verbose_name_plural = 'Transporteurs'
 
     def __str__(self):
-        return self.nom
+        return f"{self.nom} (à partir de {self.prix_base} TND)"
 
 
 class Livraison(models.Model):
